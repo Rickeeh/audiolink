@@ -1,0 +1,10 @@
+menu "AudioLink TX v2"
+
+    config TXV2_PEER_MAC
+        string "MAC STA do RX (peer ESP-NOW, AA:BB:CC:DD:EE:FF)"
+        default "00:00:00:00:00:00"
+        help
+            MAC STA do RX, lido no log de arranque dele ("MAC STA deste no"). Sem um MAC valido o TX aborta no
+            arranque: falhar alto em vez de enviar para o vazio.
+
+endmenu

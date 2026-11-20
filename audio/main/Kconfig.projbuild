@@ -1,0 +1,602 @@
+menu "AUDIOLINK audio bring-up (passos 1, 2 e 3)"
+
+    choice AUDIOLINK_AUDIO_ROLE
+        prompt "Papel desta placa"
+        default AUDIOLINK_AUDIO_ROLE_ADC
+        config AUDIOLINK_AUDIO_ROLE_ADC
+            bool "ADC_TEST (passo 1: placa TX, so captura + estatisticas/dump)"
+        config AUDIOLINK_AUDIO_ROLE_DAC
+            bool "DAC_TEST (passo 2: placa RX, so tom de teste local)"
+        config AUDIOLINK_AUDIO_ROLE_LINK_TX
+            bool "LINK_TX (passo 3: placa TX, PCM1808 -> ESP-NOW)"
+        config AUDIOLINK_AUDIO_ROLE_LINK_RX
+            bool "LINK_RX (passo 3: placa RX, ESP-NOW -> PCM5102A)"
+    endchoice
+
+    choice AUDIOLINK_CLK_MODE
+        prompt "Relogio I2S (taxa de amostragem)"
+        default AUDIOLINK_CLK_INT160_13
+        help
+            O S3 nao tem APLL. Um divisor FRACIONARIO alterna entre duas divisoes inteiras
+            (jitter por construcao); um divisor INTEIRO nao. A melhor opcao decide-se
+            medindo o espetro (passos 1/2/7), nao por suposicao.
+        config AUDIOLINK_CLK_INT240_20
+            bool "PLL 240 MHz / 20: MCLK 12,000 MHz, fs = 46875 Hz (divisor inteiro exato)"
+        config AUDIOLINK_CLK_INT160_13
+            bool "PLL 160 MHz / 13: MCLK 12,307692 MHz, fs ~ 48076,9 Hz (divisor inteiro, medido no log do driver)"
+        config AUDIOLINK_CLK_NOMINAL_48K
+            bool "48000 Hz nominais (divisor FRACIONARIO 13+1/48, medido no log do driver)"
+    endchoice
+
+    config AUDIOLINK_PIN_MCLK
+        int "GPIO MCLK (SCKI do PCM1808; no DAC/LINK_RX so com AUDIOLINK_DAC_MCLK_OUT)"
+        default 4
+    config AUDIOLINK_DAC_MCLK_OUT
+        bool "DAC/LINK_RX: emitir MCLK (256*fs) no GPIO AUDIOLINK_PIN_MCLK"
+        default n
+        help
+            n (omissao): PCM5102A, SCK a GND, PLL do DAC a partir de BCK; o S3 nao emite MCLK.
+            y: saida S/PDIF por WM8805 em modo escravo. Com dados do I2S (TXSRC=1) o transmissor S/PDIF
+            do WM8805 e relogiado pelo pino MCLK (datasheet WM8805 Rev 4.5, Tabela 30): sem MCLK nao ha
+            S/PDIF. Ver docs/RX_WM8805_SPDIF_PROPOSAL.md.
+    config AUDIOLINK_PIN_BCLK
+        int "GPIO BCLK"
+        default 5
+    config AUDIOLINK_PIN_WS
+        int "GPIO WS/LRCK"
+        default 6
+    config AUDIOLINK_PIN_DATA
+        int "GPIO dados (ADC: DIN do S3 <- DOUT do PCM1808; DAC: DOUT do S3 -> DIN do PCM5102A)"
+        default 7
+    config AUDIOLINK_PIN_XSMT
+        int "GPIO XSMT do PCM5102A (DAC/LINK_RX; -1 = NAO comandado pelo S3)"
+        default -1
+        help
+            Omissao -1: o S3 NAO toca no pino XSMT; o estado (mute/un-mute) fica ao cargo da ponte de solda
+            H3L da placa. Na placa do Psy nao esta confirmado em que lado a ponte H3L esta soldada:
+            comandar o pino a partir de um GPIO com a ponte a GND (ou a 3,3 V) e um curto atraves do GPIO.
+            So pôr um GPIO aqui depois de medir a continuidade XSMT<->GND/3,3 V e de remover/abrir a ponte H3L.
+
+    config AUDIOLINK_ADC_CAPTURE_S
+        int "ADC: duracao de cada captura (s)"
+        range 1 20
+        default 10
+        help
+            Guardada em PSRAM (8 bytes/frame). 10 s a ~48 kHz = ~3,8 MB.
+    config AUDIOLINK_ADC_PERIOD_S
+        int "ADC: intervalo entre capturas (s)"
+        default 60
+    config AUDIOLINK_ADC_MONITOR
+        bool "ADC: modo monitor (I2S sempre ligado, so estatisticas por segundo; sem captura/dump)"
+        default n
+        help
+            Para testes de nivel em tempo real: nao reinicia o I2S (o PCM1808 leva ~6 s a assentar sempre que o relogio arranca).
+    config AUDIOLINK_ADC_DUMP
+        bool "ADC: despejar cada captura pela consola (hex, 24 bit)"
+        default y
+
+    choice AUDIOLINK_DAC_SIGNAL
+        prompt "DAC: sinal de teste"
+        default AUDIOLINK_DAC_SIGNAL_ALT
+        config AUDIOLINK_DAC_SIGNAL_SILENCE
+            bool "silencio"
+        config AUDIOLINK_DAC_SIGNAL_BOTH
+            bool "seno nos dois canais"
+        config AUDIOLINK_DAC_SIGNAL_ALT
+            bool "seno alternado: 1 s esquerdo, 1 s direito (verifica ligacao L/R)"
+        config AUDIOLINK_DAC_SIGNAL_LSB24
+            bool "teste de 24 bit: seno de nivel muito baixo sobre DC de meio LSB de 16 bit, nos dois canais"
+            help
+                W1/V5. Cada amostra = 128 + seno (em LSB de 24 bit), sempre dentro de [0, 255]: os 16 bit
+                mais significativos sao sempre 0. Um caminho de 24 bit deixa passar o seno; um caminho
+                truncado a 16 bit entrega silencio constante. Exige AUDIOLINK_DAC_LEVEL_DBFS <= -97.
+    endchoice
+    config AUDIOLINK_DAC_FREQ_HZ
+        int "DAC: frequencia do seno (Hz)"
+        default 997
+    config AUDIOLINK_DAC_LEVEL_DBFS
+        int "DAC: nivel do seno (dBFS, negativo)"
+        range -120 -1
+        default -20
+
+    menu "Link ESP-NOW (passo 3, so LINK_TX/LINK_RX)"
+        visible if AUDIOLINK_AUDIO_ROLE_LINK_TX || AUDIOLINK_AUDIO_ROLE_LINK_RX
+
+        config AUDIOLINK_LINK_FRAMES_PER_PKT
+            int "Frames estereo por pacote"
+            range 16 182
+            default 128
+            help
+                8 bytes/frame (L+R, int32, sem compactacao - ver link_proto.h), cabecalho de
+                12 bytes. 182 frames = 1470 bytes = o maximo do ESP-NOW v2. 128 frames ~=
+                2,66 ms de audio por pacote a ~48077 Hz (~375 pacotes/s).
+
+        config AUDIOLINK_LINK_WIFI_CHANNEL
+            int "Canal Wi-Fi fixo"
+            range 1 13
+            default 6
+            help
+                Canal fixo, sem AP nem scan (igual ao bench da Fase 1) - selecao
+                automatica de canal e um requisito de produto mais tarde, nao deste passo.
+
+        config AUDIOLINK_LINK_PEER_MAC
+            string "MAC do peer (LINK_TX: MAC do LINK_RX; LINK_RX: MAC do LINK_TX; formato AA:BB:CC:DD:EE:FF)"
+            default "00:00:00:00:00:00"
+            help
+                LINK_TX usa isto para saber para quem enviar (esp_now_add_peer). LINK_RX
+                usa-o (2026-09-30) para filtrar de quem ACEITA audio (contador
+                foreign_peer): sem isto, o RX aceitava qualquer pacote ALK1 bem formado de
+                qualquer emissor no canal, o que podia contaminar s_max_enqueued_ctr/a fila
+                se houvesse outro no AudioLink por perto. Le o MAC no log de arranque do
+                outro no ("link_espnow: MAC STA deste no: ...") e cola aqui.
+
+        config AUDIOLINK_LINK_RX_LOG_CONCEALMENTS
+            bool "LINK_RX: imprimir uma linha CONCEAL por cada concealment (diagnostico pontual)"
+            default n
+            help
+                Desligado por omissao: em rede degradada ja se viu >100 concealments/s, o que
+                satura a serie (115200 baud) e atrasa de forma variavel a chegada das linhas
+                periodicas ao host - contamina qualquer medicao (ex.: drift) que dependa do
+                instante de chegada a serie. So ligar para investigar um problema concreto de
+                concealment (como foi usado em 2026-09-30 para o "pii" no fim do tom).
+
+        config AUDIOLINK_LINK_RX_DRIFT_LOG_S
+            int "LINK_RX: intervalo do log DRIFT (fase TX-RX em frames, para medir ppm)"
+            range 1 60
+            default 5
+            help
+                Linha DRIFT separada da LINKRX normal, com tx_ctr/rx_ctr/phase_err_frames e
+                contadores agregados, pensada para regressao linear ao longo de uma corrida
+                longa. Ao contrario da linha LINKRX (1x/s), esta usa so o uptime local do RX
+                (esp_timer) - nunca o instante de chegada da linha a serie - por isso da para
+                medir ppm sem o ruido de latencia variavel da porta serie.
+
+        config AUDIOLINK_LINK_RX_BUFFER_BLOCKS
+            int "LINK_RX: blocos acumulados antes de iniciar o playout (buffer minimo)"
+            range 1 32
+            default 4
+            help
+                Buffer minimo e fixo (2026-09-30): o RX so comeca a tocar depois de ter
+                este numero de blocos em fila; a partir dai consome sempre exatamente 1
+                bloco por periodo, nunca recupera em rajada (mesma regra de antes). O
+                objetivo e dar folga aos pacotes que chegam 1-4 blocos tarde (a maioria,
+                por medicao) sem introduzir logica de PLC nem correcao de drift. NAO
+                reenche a meio do stream se a ocupacao cair - isso fica para uma fase
+                posterior, se a medicao mostrar necessidade.
+
+        config AUDIOLINK_LINK_RX_I2S_DMA_DESC
+            int "LINK_RX: descriptors do anel DMA do I2S de saida (128 tramas cada)"
+            range 3 16
+            default 8
+            help
+                L1 (2026-10-30, docs/LATENCY_REVIEW_2026-10-30.md). O loop de playout so e ritmado pela escrita
+                bloqueante no I2S, por isso o anel esta sempre cheio: cada descriptor e um bloco (2,66 ms) de
+                latencia. Nao protege contra atrasos do radio (isso e a fila); so da ao escritor (N-1) periodos de
+                folga para voltar depois de cada fim de descriptor. Atraso medido do escritor: <= 1,35 ms em ~2,7 h.
+                8 = C1 e anteriores (21,3 ms); 4 = L1 (10,7 ms, folga de 8 ms).
+
+        config AUDIOLINK_LINK_RX_I2S_AUTO_CLEAR
+            bool "LINK_RX: zerar cada buffer DMA devolvido (underrun = silencio em vez de audio velho)"
+            default n
+            help
+                L1 (2026-10-30). auto_clear_after_cb do driver I2S: o ISR zera o buffer depois de tocado. Se o escritor
+                chegar tarde, o DMA toca zeros em vez de repetir audio de (N-1) blocos antes. So muda o que se ouve
+                num underrun; o underrun continua contado (dac_underrun). Custo: memset de 1 KB por descriptor no ISR.
+
+        config AUDIOLINK_LINK_RX_MAX_JUMP_S
+            int "LINK_RX: salto maximo plausivel de sample_ctr entre pacotes aceites (segundos)"
+            range 1 60
+            default 2
+            help
+                Defesa (2026-09-30) motivada por um evento real: s_max_enqueued_ctr ficou
+                congelado em ~562320000, muito acima do sample_ctr real do TX. A causa
+                exata NAO esta determinada (802.11/ESP-NOW ja tem FCS ao nivel MAC, por
+                isso nao se assume "bit-flip no ar" sem evidencia) - isto protege
+                independentemente da causa. Um pacote aceite (do peer configurado) cujo
+                sample_ctr salte para a frente mais do que este numero de segundos de
+                audio, em relacao ao maior sample_ctr ja aceite, e rejeitado e contado em
+                corrupt_jump - nao entra na fila nem mexe em s_max_enqueued_ctr. So se
+                aplica DEPOIS de haver uma base real (o 1o pacote de sempre nunca e
+                rejeitado, mesmo que o TX ja estivesse a correr ha muito tempo antes do RX
+                arrancar). Default de 2 s da >50x de folga acima da maior
+                rajada real ja medida (~34 ms / 13 blocos) e continua a apanhar com folga
+                enorme o caso real que motivou isto (~3,2 h de salto).
+                REANCHOR-01 (2026-10-29): e uma margem fixa SOMADA ao tempo real decorrido desde
+                a referencia (link_plaus.h); ja nao e o limite total.
+
+        menu "TESTE R2 (docs/RX_REANCHOR_PROPOSAL.md) - NUNCA em builds de producao"
+            visible if AUDIOLINK_AUDIO_ROLE_LINK_RX
+            config AUDIOLINK_TEST_RX_DEAF
+                bool "TESTE: o RX ignora TODOS os pacotes em 3 janelas programadas (uptime do RX)"
+                default n
+                help
+                    Equivalente aplicacional de uma falha de radio com o TX a correr: no topo de
+                    link_rx_on_packet, dentro de uma janela, o pacote e descartado antes de qualquer
+                    contador ou estado. Serve para reproduzir de forma determinista o bloqueio por
+                    implausible_ctr (regra antiga) e verificar a recuperacao (REANCHOR-01).
+            config AUDIOLINK_TEST_RX_DEAF_W1_START_S
+                int "Janela 1: inicio (s de uptime do RX)"
+                depends on AUDIOLINK_TEST_RX_DEAF
+                default 60
+            config AUDIOLINK_TEST_RX_DEAF_W1_DUR_S
+                int "Janela 1: duracao (s)"
+                depends on AUDIOLINK_TEST_RX_DEAF
+                default 4
+            config AUDIOLINK_TEST_RX_DEAF_W2_START_S
+                int "Janela 2: inicio (s de uptime do RX)"
+                depends on AUDIOLINK_TEST_RX_DEAF
+                default 120
+            config AUDIOLINK_TEST_RX_DEAF_W2_DUR_S
+                int "Janela 2: duracao (s)"
+                depends on AUDIOLINK_TEST_RX_DEAF
+                default 30
+            config AUDIOLINK_TEST_RX_DEAF_W3_START_S
+                int "Janela 3: inicio (s de uptime do RX)"
+                depends on AUDIOLINK_TEST_RX_DEAF
+                default 240
+            config AUDIOLINK_TEST_RX_DEAF_W3_DUR_S
+                int "Janela 3: duracao (s)"
+                depends on AUDIOLINK_TEST_RX_DEAF
+                default 300
+            config AUDIOLINK_TEST_REANCHOR_OLD_RULE
+                bool "TESTE: limite de plausibilidade ANTIGO (so a margem fixa), para reproduzir o bloqueio"
+                default n
+                help
+                    Passa o instante da verificacao como hora da referencia (tempo decorrido 0): o limite
+                    fica so MAX_JUMP_S*fs, exatamente a regra anterior ao REANCHOR-01 (provado no teste de
+                    host test_old_rule_would_block).
+        endmenu
+
+        menu "Correcao de drift por sample-slip (v1 experimental, 2026-09-30)"
+            config AUDIOLINK_LINK_DRIFT_CORRECTION
+                bool "LINK_RX: ativar sample-slip +-1 frame para corrigir drift de relogio"
+                default y
+                help
+                    Insere/remove 1 frame estereo (interpolacao linear entre os 2 frames
+                    centrais de um bloco) quando a ocupacao real da fila sai de uma banda de
+                    histerese a volta de AUDIOLINK_LINK_RX_BUFFER_BLOCKS - separado do
+                    concealment de RF (que trata perdas/atrasos pontuais) e do rebuffer (que
+                    trata desvios grandes). Desligar faz o RX voltar exatamente ao
+                    comportamento anterior (sem nenhuma correcao, sem rebuffer unificado no
+                    arranque).
+
+            config AUDIOLINK_LINK_DRIFT_TARGET_FRAMES
+                int "TARGET: ocupacao de regime do controlador (frames-equivalentes)"
+                default 576
+                help
+                    TUNE-TARGET-01 (2026-10-02): ate aqui, TARGET = AUDIOLINK_LINK_RX_BUFFER_BLOCKS *
+                    128 - o mesmo numero fazia de profundidade de bootstrap/rebuffer E de alvo do
+                    controlador em regime normal, dois conceitos diferentes (quantos blocos
+                    contiguos preciso para (re)arrancar vs em volta de que ocupacao quero operar
+                    depois de arrancado). Agora sao independentes: TARGET so entra em
+                    target_occ_frames (ver link_rx_run); AUDIOLINK_LINK_RX_BUFFER_BLOCKS continua a
+                    mandar sozinho em QUEUE_DEPTH, na profundidade de contiguidade exigida para sair
+                    de REBUFFERING, e no valor a que a EMA e reposta logo apos um resync (com
+                    AUDIOLINK_LINK_RX_RESYNC_KEEP_RUN, nesse instante a ocupacao REAL e BUFFER_BLOCKS mais o
+                    que chegou entretanto, nao o TARGET - nao mudar isso; sem a opcao a fila fica com 0-2 itens
+                    e enche durante BUFFER_BLOCKS periodos de ocultacao, ver RESYNC-KEEP-RUN).
+                    Default 576 = 4,5 blocos: baseline aceite no TUNE-TARGET-01 (2026-10-02). Esta no
+                    default (nao num overlay) para um build normal nunca regressar em silencio a 512,
+                    como aconteceu nos builds do STARTUP-QOVF-01. Margem atual ao HIGH_WATER:
+                    896 - (576 + 96) = 224 >= 2*96. Mantem margem a AUDIOLINK_LINK_REBUFFER_HIGH_WATER_FRAMES de
+                    pelo menos 2x AUDIOLINK_LINK_DRIFT_HYST_FRAMES (HIGH_WATER - (TARGET+HYST) >= 2*HYST)
+                    - acima disso o DROP threshold fica perigosamente perto do gatilho de rebuffer HIGH.
+
+            config AUDIOLINK_LINK_DRIFT_HYST_FRAMES
+                int "HYST: banda morta a volta do TARGET (frames-equivalentes de ocupacao)"
+                default 96
+                help
+                    CORRIGIDO (2026-09-30): o sinal de controlo deixou de ser phase_err =
+                    s_max_enqueued_ctr - expected_ctr (esse contador media na verdade o
+                    maior sample_ctr RECEBIDO, nao o que estava realmente na fila - com
+                    queue_ovf alto inflacionava o sinal para milhares de frames sem relacao
+                    com o buffer real). Agora usa-se a ocupacao REAL da fila (uxQueueMessagesWaiting),
+                    com uma EMA lenta, expressa em frames-equivalentes (occ_ema * 128) para
+                    manter o mesmo valor numerico ja aprovado (96 frames ~= 0,75 bloco).
+                    TARGET ve-se em AUDIOLINK_LINK_DRIFT_TARGET_FRAMES (TUNE-TARGET-01,
+                    2026-10-02) - deixou de estar implicitamente preso a
+                    AUDIOLINK_LINK_RX_BUFFER_BLOCKS.
+
+            config AUDIOLINK_LINK_DRIFT_EMA_TAU_MS
+                int "EMA_TAU: constante de tempo da media movel lenta do erro de fase (ms)"
+                default 6000
+
+            config AUDIOLINK_LINK_DRIFT_COOLDOWN_MS
+                int "COOLDOWN: espaco minimo entre duas correcoes de 1 frame (ms)"
+                default 2500
+
+            config AUDIOLINK_LINK_RF_TRIGGER_COUNT
+                int "gate_freeze: concealments future_waiting dentro da janela para disparar o freeze"
+                range 2 32
+                default 6
+                help
+                    PATCH-DRIFT-01 (2026-10-01): so concealments future_waiting (bloco devido
+                    em falta com bloco mais recente ja na fila) contam. queue_empty deixou de
+                    contar - podia ser produzido pelo proprio defice de sample-slip e
+                    bloquear a correcao que o resolveria (ver FAIL-DRIFT-01).
+                    NAO E DEFINITIVO - veio de simulacao, ainda por validar em hardware
+                    real (ver plano de validacao). Um valor baixo (ex.: 2) demonstrou em
+                    simulacao disparar so com jitter de rede normal (ja da ~0,5-1
+                    concealment/s em condicoes boas), criando um ciclo vicioso lento
+                    (gate trava o corretor -> drift acumula -> mais concealment -> gate
+                    trava mais) so visivel ao fim de dezenas de minutos.
+
+            config AUDIOLINK_LINK_RF_TRIGGER_WINDOW_MS
+                int "Gate RF: duracao da janela do detetor de rajada (ms)"
+                default 1000
+
+            config AUDIOLINK_LINK_RF_FREEZE_MS
+                int "Gate RF: duracao FIXA e nao renovavel do freeze apos disparar (ms)"
+                default 5000
+                help
+                    Concealments durante o freeze NAO prolongam o timer (testado em
+                    simulacao: um contador de janela deslizante sem limite de tempo pode
+                    ficar preso indefinidamente se o defice acumulado gerar concealment
+                    continuo). Ao fim do tempo fixo volta sempre a NORMAL.
+
+            config AUDIOLINK_LINK_REBUFFER_EMA_TAU_MS
+                int "Rebuffer: constante de tempo da media movel RAPIDA da ocupacao (ms)"
+                default 300
+                help
+                    Separada da EMA lenta do drift correction. Usada para a ocupacao
+                    (occ_ema_fast) E para a taxa de queue_ovf (ovf_rate_ema) - ver LOW/HIGH
+                    water abaixo. Um teste de "sempre abaixo do limiar, sem interrupcao"
+                    (sustain) mostrou-se fragil: o proprio jitter normal faz o sinal tocar
+                    de volta acima/abaixo do limiar antes de completar a janela de
+                    sustentacao, mesmo estando cronicamente desviado - por isso usa-se uma
+                    EMA rapida em vez disso.
+
+            config AUDIOLINK_LINK_REBUFFER_LOW_WATER_FRAMES
+                int "Rebuffer LOW: ocupacao minima (frames-equivalentes) da EMA rapida antes de disparar"
+                range 0 4096
+                default 64
+                help
+                    CORRIGIDO (2026-09-30): reexpresso em ocupacao real (occ_ema_fast * 128),
+                    nao phase_err. Dispara rebuffer (motivo LOW) quando occ_ema_fast cai
+                    abaixo disto - 64 frames-equivalentes ~= 0,5 bloco, o mesmo ponto de
+                    disparo que o antigo limiar -64 em phase_err representava de facto (a
+                    relacao phase_err=(occ-1)*128 fazia phase_err=-64 corresponder a
+                    occ=0,5 bloco). Mesmo comportamento numerico, formula mais direta.
+
+            config AUDIOLINK_LINK_REBUFFER_HIGH_WATER_FRAMES
+                int "Rebuffer HIGH: ocupacao maxima (frames-equivalentes) da EMA rapida antes de disparar"
+                range 0 4096
+                default 896
+                help
+                    NOVO (2026-09-30), NAO VALIDADO - primeira estimativa, nao veio de
+                    medicao nem simulacao longa (ao contrario do LOW water, que e uma
+                    reexpressao exata de um valor ja aprovado). Dispara rebuffer (motivo
+                    HIGH) quando occ_ema_fast fica persistentemente perto do topo da fila
+                    (QUEUE_DEPTH = BUFFER_BLOCKS+4 blocos = 1024 frames-equivalentes para
+                    BUFFER_BLOCKS=4; default 896 ~= 7 blocos, ~87% cheio). Cobre o caso
+                    observado em bancada: TX bem a frente do que expected_ctr espera, fila
+                    permanentemente cheia, queue_ovf continuo, sem que o LOW water alguma
+                    vez dispare (a fila nunca fica vazia - o problema e o oposto).
+
+            config AUDIOLINK_LINK_REBUFFER_OVF_RATE_HZ
+                int "Rebuffer HIGH: taxa de queue_ovf (EMA, /s) que tambem dispara, independente da ocupacao"
+                range 1 2000
+                default 20
+                help
+                    NOVO (2026-09-30), NAO VALIDADO - primeira estimativa. Segunda condicao
+                    independente para o motivo HIGH: mesmo que occ_ema_fast nao atinja o
+                    limiar acima, uma taxa sustentada de overflow da fila (EMA com a mesma
+                    constante de tempo de AUDIOLINK_LINK_REBUFFER_EMA_TAU_MS) e por si so
+                    evidencia de que o RX esta cronicamente a receber mais do que consegue
+                    consumir - qualquer uma das duas condicoes (ocupacao OU taxa de
+                    overflow) dispara o rebuffer.
+
+            config AUDIOLINK_LINK_RX_CONCEAL_FADE
+                bool "Ocultacao sem repeticao: fade-out espelhado, silencio, fade-in (CONCEAL-FADE-01)"
+                depends on AUDIOLINK_LINK_DRIFT_CORRECTION
+                default y
+                help
+                    2026-10-30, docs/RX_CONCEAL_FADE_PROPOSAL.md §6, link_conceal.h. Todo o periodo sem bloco
+                    real (ocultacao em NORMAL e REBUFFERING) escreve 1 fade-out com o ultimo bloco real ao
+                    contrario (comeca na ultima amostra escrita, acaba em zero) e depois silencio; o 1.o bloco
+                    real a seguir entra com fade-in de 1 bloco. Acaba com o tom de 375,6 Hz (repeticao do
+                    bloco) nas falhas longas e com os degraus nas transicoes. Blocos normais bit-exatos; as
+                    decisoes (expected_ctr, slip, rebuffer) e os contadores nao mudam. Desligado = ocultacao
+                    do JB40 (repete o ultimo bloco a amplitude total).
+
+            config AUDIOLINK_LINK_RX_RESYNC_KEEP_RUN
+                bool "Resync toca a sequencia contigua que o prova, em vez de a perder (RESYNC-KEEP-RUN)"
+                depends on AUDIOLINK_LINK_DRIFT_CORRECTION
+                default y
+                help
+                    2026-10-30, docs/RX_CONCEAL_FADE_PROPOSAL.md §6. Para ver se BUFFER_BLOCKS pacotes sao
+                    contiguos e preciso retira-los da fila (uma fila FreeRTOS so deixa ver o 1.o). Sem esta
+                    opcao (JB40 e anteriores) eram perdidos: depois de cada resync o RX tocava BUFFER_BLOCKS
+                    ocultacoes, a ocupacao real ficava 0-2 em vez de BUFFER_BLOCKS e as ocultacoes armavam o
+                    gate RF. Com a opcao, vao para um buffer de BUFFER_BLOCKS itens em PSRAM e no resync voltam
+                    a frente da fila. Custo: BUFFER_BLOCKS*1060 B de PSRAM (15,9 KB com 15 blocos).
+
+        endmenu
+
+        config AUDIOLINK_LINK_TX_MAX_PENDING
+            int "LINK_TX: envios esp_now_send() em curso sem callback antes de parar de tentar (backpressure)"
+            range 2 64
+            default 8
+            help
+                Sem isto, o TX chama esp_now_send() ao ritmo do I2S mesmo que a fila
+                interna da stack Wi-Fi ja esteja cheia - a API devolve
+                ESP_ERR_ESPNOW_NO_MEM (o proprio header do IDF diz "you can delay a while
+                before sending the next data"). Em vez de insistir, o TX simplesmente NAO
+                tenta enviar esse bloco quando ja ha este numero de envios por confirmar.
+                Valor de partida, nao documentado pela Espressif - afinar por medicao
+                (ver LINKTX: pending/backpressure_drop no log).
+
+        config AUDIOLINK_TRACE_TX_BOOT
+            bool "TRACE-TX-BOOT-01: trace temporal SEND/CALLBACK no arranque do TX (diagnostico)"
+            default n
+            help
+                So diagnostico (DEEP-TX-DEGRADATION-02). Regista, em RAM interna, cada oportunidade
+                de envio produzida pelo audio e cada callback do ESP-NOW, durante uma janela que
+                comeca na 1a oportunidade de envio. Sem malloc/printf/locks por evento; buffers
+                reservados so no init (sem fallback para PSRAM - se nao houver margem de RAM
+                interna, o trace fica desativado e diz porque). Despejado pela tx_diag_task em
+                base64 com CRC32 por bloco, muito depois da janela. Desligado = codigo inexistente.
+
+        config AUDIOLINK_TRACE_TX_BOOT_WINDOW_MS
+            int "TRACE-TX-BOOT-01: janela a partir da 1a oportunidade de envio (ms)"
+            depends on AUDIOLINK_TRACE_TX_BOOT
+            range 1000 20000
+            default 15000
+
+        config AUDIOLINK_TRACE_TX_BOOT_MIN_FREE_INTERNAL_KB
+            int "TRACE-TX-BOOT-01: RAM interna livre minima a deixar ao Wi-Fi depois de reservar (KB)"
+            depends on AUDIOLINK_TRACE_TX_BOOT
+            range 16 256
+            default 64
+
+        config AUDIOLINK_TRACE_TX_BOOT_DUMP_AT_S
+            int "TRACE-TX-BOOT-01: uptime a partir do qual o trace e despejado (s)"
+            depends on AUDIOLINK_TRACE_TX_BOOT
+            range 30 600
+            default 140
+
+        config AUDIOLINK_SELFRESET_PROBE
+            bool "SELFRESET-PROBE-01: um esp_restart() num boot STRONG aos 15 s (teste, so bancada)"
+            default n
+            help
+                No tick de t0+15 s: frac15 = aceites/oportunidades desde t0 (como o host no BOOT-QUALIFIER-02).
+                Se < 0,568 (STRONG) e o boot NAO veio de um reset por software (esp_reset_reason() !=
+                ESP_RST_SW), imprime "SELFRESET RESTART" e chama esp_restart() UMA vez; o boot seguinte (motivo
+                SW) so imprime "SELFRESET CHECK ... skip". Nao e um supervisor: nao ha READY, timeout nem mais
+                tentativas.
+
+        config AUDIOLINK_STARTUP_SUPERVISOR
+            bool "STARTUP-SUPERVISOR: qualificacao do boot do TX por esp_restart() (politica do BOOT-QUALIFIER-02)"
+            depends on !AUDIOLINK_SELFRESET_PROBE
+            default n
+            help
+                Reproduz no firmware a politica validada no host (BQ-02): no tick de t0+15 s, frac15 < 0,568
+                (STRONG) -> esp_restart(); senao, READY = 20 s seguidos com a regra do healthy() do lado do TX
+                (lat <= 3000 us, pending <= 5, d(accept) >= 370, d(bp) <= 1 em cada tick e pending medio <= 2;
+                sem a condicao do RX, que o TX nao ve); sem READY aos 120 s de uptime -> esp_restart().
+                Maximo 20 tentativas por sequencia; contador em RTC NOINIT, so valido atraves de esp_restart()
+                (esp_reset_reason() != ESP_RST_SW -> 0), incrementado antes de cada auto-reinicio e posto a 0 no
+                READY. Ao fim de 20 tentativas sem READY: "STARTUP GIVEUP", sem mais reinicios (o no fica vivo).
+                RC2: se aos 15 s nao houve nenhum send_ok (nenhum ACK do peer), "STARTUP WAIT_PEER": nao conta
+                tentativa, sem reinicio e sem timeout, ate ao 1o send_ok; ai "STARTUP PEER_SEEN", sem reinicio, o
+                frac15 desse boot e ignorado e comeca uma janela nova: READY (mesma regra) ou, sem READY em 120 s desde
+                o PEER_SEEN, falha PEER_TIMEOUT (conta tentativa) -> esp_restart().
+
+        config AUDIOLINK_WIFI_REINIT
+            bool "WIFI-REINIT-01: primitive link_espnow_tx_reinit() (experimental)"
+            default n
+            help
+                Compila link_espnow_tx_reinit(): desmonta e volta a montar o caminho Wi-Fi/ESP-NOW do TX
+                sem reboot (ESP-NOW deinit, esp_wifi_stop/start, largura/canal/PS repostos do estado
+                anterior, esp_now_init, callback, peer e taxa), com verificacao por releitura e uma
+                2a tentativa. Nenhuma falha faz abort() nem reboot; o pending e drenado e contado.
+                So a primitive: sem qualificacao, nada a chama. Desligado = codigo inexistente
+                (binario igual ao baseline).
+
+        config AUDIOLINK_WIFI_REINIT_QUAL
+            bool "WIFI-REINIT-01: gatilho periodico de qualificacao de seguranca (so bancada)"
+            depends on AUDIOLINK_WIFI_REINIT
+            default n
+            help
+                So para a qualificacao de seguranca em bancada (nao e o desenho experimental):
+                chama link_espnow_tx_reinit() a partir da tarefa TX a cada PERIOD_S, a partir de
+                START_S de uptime.
+
+        config AUDIOLINK_WIFI_REINIT_PROBE
+            bool "WIFI-REINIT-01: DEEP-REINIT-PROBE (1 reinit no maximo por boot, so em degradacao atual persistente)"
+            depends on AUDIOLINK_WIFI_REINIT && !AUDIOLINK_WIFI_REINIT_QUAL
+            default n
+            help
+                Gate v3 (G2-agg20): uma decisao por boot em t0+60 s sobre os ultimos 20 ticks de 1 s;
+                reinit so se falham as duas familias - T: media d(accept) < 370 ou media d(bp) > 1;
+                L: latencia media > 3000 us ou pending medio > 2 (limiares do healthy()). frac15 so
+                descritivo. O FLASH_BOOT e excluido pelo host (reset_single logo depois do banner).
+                Marcadores PROBE PRE, WIFIREINIT BEGIN/END e PROBE POST aos +30 s e +60 s.
+
+        config AUDIOLINK_WIFI_REINIT_PROBE_PAUSE
+            bool "WIFI-REINIT-01: PAUSE-PROBE (controlo: quiesce sem reinit)"
+            depends on AUDIOLINK_WIFI_REINIT_PROBE
+            default n
+            help
+                Mesmo probe (gate G2-agg20 em t0+60 s, 1 intervencao, POST 30/60 s), mas a intervencao e
+                link_espnow_tx_pause(): o mesmo quiesce do reinit (bloquear envios, esperar pending == 0 com
+                o mesmo timeout), envios bloqueados mais HOLD_US e reabrir, sem tocar em ESP-NOW/Wi-Fi.
+
+        config AUDIOLINK_WIFI_REINIT_PROBE_ESPNOW
+            bool "WIFI-REINIT-01: ESPNOW-REINIT-PROBE (so o ciclo de vida do ESP-NOW, sem Wi-Fi stop/start)"
+            depends on AUDIOLINK_WIFI_REINIT_PROBE && !AUDIOLINK_WIFI_REINIT_PROBE_PAUSE
+            default n
+            help
+                Mesmo probe (gate G2-agg20 em t0+60 s, 1 intervencao, POST 30/60 s), mas a intervencao e
+                link_espnow_tx_espnow_reinit(): o mesmo quiesce e o mesmo ciclo de vida do ESP-NOW do reinit,
+                sem esp_wifi_stop/start e sem setters de canal/largura/PS (so leituras antes/depois).
+
+        config AUDIOLINK_WIFI_REINIT_PROBE_ESPNOW_RECOVERY
+            bool "WIFI-REINIT-01: ESPNOW-RECOVERY-PROBE (ESPNOW reinit na fase de recuperacao)"
+            depends on AUDIOLINK_WIFI_REINIT_PROBE_ESPNOW
+            default n
+            help
+                Se o G2-agg20 falhar em t0+60 s, nao intervir ai: a partir do tick seguinte, fazer o unico
+                ESPNOW reinit no PRIMEIRO tick em que >= 4 dos ultimos 10 ticks passam a regra de tick do
+                healthy(). Sem isso ate 600 s de uptime: TIMEOUT, sem intervencao.
+
+        config AUDIOLINK_WIFI_REINIT_PROBE_PAUSE_HOLD_US
+            int "WIFI-REINIT-01 PAUSE-PROBE: envios bloqueados depois da drenagem (us)"
+            depends on AUDIOLINK_WIFI_REINIT_PROBE_PAUSE
+            range 1000 2000000
+            default 10000
+            help
+                D fixo, nao adaptativo. 10000 us = parte Wi-Fi/ESP-NOW do reinit do DEEP-REINIT-PROBE
+                (unreg_cb..rate = 10,5 ms em probe_run2; ~10,8 ms nos 10 reinits do SMOKE). Com tick de 1 ms
+                o hold real fica em 10-11 ms (registado em hold_us no END).
+
+        config AUDIOLINK_WIFI_REINIT_QUAL_START_S
+            int "WIFI-REINIT-01 QUAL: uptime do 1o reinit (s)"
+            depends on AUDIOLINK_WIFI_REINIT_QUAL
+            range 10 3600
+            default 360
+
+        config AUDIOLINK_WIFI_REINIT_QUAL_PERIOD_S
+            int "WIFI-REINIT-01 QUAL: intervalo entre o fim de um reinit e o inicio do seguinte (s)"
+            depends on AUDIOLINK_WIFI_REINIT_QUAL
+            range 2 3600
+            default 10
+
+        config AUDIOLINK_WIFI_REINIT_QUAL_MAX
+            int "WIFI-REINIT-01 QUAL: numero maximo de reinits (0 = sem limite)"
+            depends on AUDIOLINK_WIFI_REINIT_QUAL
+            range 0 100000
+            default 0
+
+        choice AUDIOLINK_LINK_PHYMODE
+            prompt "PHY mode"
+            default AUDIOLINK_LINK_PHYMODE_HT20
+            config AUDIOLINK_LINK_PHYMODE_11G
+                bool "802.11g (WIFI_PHY_MODE_11G)"
+            config AUDIOLINK_LINK_PHYMODE_HT20
+                bool "802.11n HT20 (WIFI_PHY_MODE_HT20)"
+        endchoice
+
+        choice AUDIOLINK_LINK_RATE
+            prompt "Taxa PHY fixa"
+            default AUDIOLINK_LINK_RATE_MCS4_LGI
+            help
+                Audio em bruto (32 bit/amostra, sem compactacao) a ~48077 Hz estereo exige
+                ~3,1 Mbps continuos, so de payload - MAIS do que os 1,92 Mbps validados na
+                Fase 1 como o ponto robusto (11g 6 Mbps) para corpo/paredes. MCS4 LGI foi
+                medido na Fase 1 a 4,7 Mbps com 0,03% de perdas em condicoes boas (margem
+                sobre os ~3,1 Mbps), mas degrada com obstrucao (ver docs/PHASE1_RESULTS.md).
+                Esta escolha e PROVISORIA para o passo 3 (so observar o comportamento);
+                o compromisso taxa/robustez com trafego de audio real fica para o passo 5.
+            config AUDIOLINK_LINK_RATE_6M
+                bool "6 Mbps (11g) - robusto mas ABAIXO do audio em bruto (~3,1 Mbps): vai perder"
+            config AUDIOLINK_LINK_RATE_24M
+                bool "24 Mbps (11g)"
+            config AUDIOLINK_LINK_RATE_MCS0_LGI
+                bool "MCS0 long GI (HT20)"
+            config AUDIOLINK_LINK_RATE_MCS4_LGI
+                bool "MCS4 long GI (HT20) - omissao: medido na Fase 1, margem sobre o audio em bruto"
+        endchoice
+    endmenu
+
+endmenu

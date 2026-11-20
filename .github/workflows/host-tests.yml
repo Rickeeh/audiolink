@@ -1,0 +1,11 @@
+name: Host tests
+on: [push, pull_request, workflow_dispatch]
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run C host tests with sanitizers
+        run: bash tests_host/run.sh
+        env:
+          CC: clang

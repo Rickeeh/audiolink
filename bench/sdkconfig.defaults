@@ -1,0 +1,18 @@
+# AUDIOLINK bench - defaults comuns a qualquer target/role/transporte.
+# Overlay S3-especifico (flash 16MB, PSRAM octal) vive em
+# sdkconfig.defaults.esp32s3, aplicado automaticamente pelo
+# `idf.py set-target esp32s3`.
+
+# Tick a 1kHz para pacing de TX mais fino (default IDF e 100Hz).
+CONFIG_FREERTOS_HZ=1000
+
+# Baud rate alto para o despejo de CSV do RX nao demorar minutos.
+CONFIG_ESP_CONSOLE_UART_BAUDRATE=921600
+
+# Guarda peers/config de Wi-Fi so em RAM: isto e firmware de bancada,
+# corre muitas vezes, e nao ha razao para gastar ciclos de flash.
+CONFIG_ESP_WIFI_NVS_ENABLED=n
+
+# O TX faz espera ativa fina no core 1 (pacing < 1 tick) e nunca cede ao
+# IDLE1; sem isto o task watchdog dispara. So faz sentido em firmware de bancada.
+CONFIG_ESP_TASK_WDT_CHECK_IDLE_TASK_CPU1=n

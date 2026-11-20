@@ -1,0 +1,7 @@
+# R1 (docs/RX_REANCHOR_PROPOSAL.md): RX Beta 1 + LED (PCM5102A) + correcao REANCHOR-01. So muda a versao face ao overlay da Beta 1 + LED.
+# AudioLink Beta 1 + LED de estado - RX. Igual a release/BETA1/rx.ov exceto a versao.
+CONFIG_AUDIOLINK_AUDIO_ROLE_LINK_RX=y
+CONFIG_AUDIOLINK_CLK_INT160_13=y
+CONFIG_AUDIOLINK_LINK_PEER_MAC="28:84:85:64:1D:EC"
+CONFIG_APP_PROJECT_VER_FROM_CONFIG=y
+CONFIG_APP_PROJECT_VER="audiolink-r1-rx-pcm5102a-reanchor"

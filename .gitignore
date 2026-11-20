@@ -1,0 +1,25 @@
+# Builds e dependencias geradas
+**/build*/
+**/managed_components/
+**/sdkconfig
+**/sdkconfig.old
+**/dependencies.lock
+*.elf
+*.bin
+*.map
+*.o
+*.a
+*.profraw
+# Ambiente local e capturas
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+.env
+.env.*
+!.env.example
+*.raw.txt
+*.wav
+*.flac
+*.pcap
+*.pcapng

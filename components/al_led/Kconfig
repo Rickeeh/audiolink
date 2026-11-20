@@ -1,0 +1,14 @@
+menu "AudioLink - LED de estado"
+    config ALK_LED_GPIO
+        int "GPIO do LED RGB onboard (WS2812); -1 = sem LED"
+        range -1 48
+        default 48
+        help
+            LED de estado do no (TX ambar, RX ciano, erro vermelho, sem peer a piscar, arranque branco).
+            Nas DevKitC-1 v1.0 e clones (YD-ESP32-S3) o WS2812 esta no GPIO 48; nas DevKitC-1 v1.1 no GPIO 38.
+            Alguns clones exigem fechar a ponte de solda "RGB" para o LED funcionar.
+    config ALK_LED_BRIGHTNESS
+        int "Brilho maximo do LED (1-255)"
+        range 1 255
+        default 24
+endmenu

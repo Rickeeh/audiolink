@@ -1,0 +1,23 @@
+# C1 (candidato a producao, 2026-10-30): JB40 + CONCEAL-FADE-01 + RESYNC-KEEP-RUN (docs/RX_CONCEAL_FADE_PROPOSAL.md §6). Igual ao overlay do JB40 exceto a versao e as 2 opcoes, explicitas (o default ja e y).
+# JB40 (docs/TRANSPORT_REVIEW_2026-10-30.md, alternativa A): R1 RX_WM8805 com o buffer de jitter +11 blocos. Translacao pura de BUFFER_BLOCKS, TARGET e HIGH_WATER (QUEUE_DEPTH = BUFFER+4 segue); LOW_WATER, HYST, tau, cooldown, gate RF, DMA, TX, PHY, canal, protocolo e ocultacao iguais ao R1. Perfil de baixa latencia = R1 (release/R1-REANCHOR/RX_WM8805, sem estas 3 linhas).
+# AudioLink Beta 1 + LED de estado - RX. Igual a release/BETA1/rx.ov exceto a versao.
+CONFIG_AUDIOLINK_AUDIO_ROLE_LINK_RX=y
+CONFIG_AUDIOLINK_CLK_INT160_13=y
+CONFIG_AUDIOLINK_LINK_PEER_MAC="28:84:85:64:1D:EC"
+CONFIG_APP_PROJECT_VER_FROM_CONFIG=y
+CONFIG_APP_PROJECT_VER="audiolink-c1-rx-wm8805"
+# W2: RX Beta 1 + LED com saida WM8805/S-PDIF na placa do AudioCast (ESP ac:27:6e:a5:4e:10). Playout, link e taxa
+# (INT160_13) iguais a Beta 1; mudam so pinos do AudioCast, MCLK emitido. LED no GPIO 48 como na Beta 1: o AudioCast nunca usou o 48 e o CN3 do WM8805 nao o liga; desligar o LED retirava o driver RMT e mudava 69 funcoes (incl. o driver I2S, por relaxacao de chamadas), com o 48 so muda link_rx_run (+4 B).
+CONFIG_AUDIOLINK_PIN_MCLK=18
+CONFIG_AUDIOLINK_PIN_BCLK=16
+CONFIG_AUDIOLINK_PIN_WS=8
+CONFIG_AUDIOLINK_PIN_DATA=15
+CONFIG_AUDIOLINK_PIN_XSMT=-1
+CONFIG_AUDIOLINK_DAC_MCLK_OUT=y
+CONFIG_ALK_LED_GPIO=48
+# JB40: +11 blocos (+29,3 ms). Relacoes do R1 preservadas: TARGET = (BUFFER+0,5)*128; HIGH - (TARGET+HYST) = 224 >= 2*HYST; QUEUE_DEPTH*128 - HIGH = 128.
+CONFIG_AUDIOLINK_LINK_RX_BUFFER_BLOCKS=15
+CONFIG_AUDIOLINK_LINK_DRIFT_TARGET_FRAMES=1984
+CONFIG_AUDIOLINK_LINK_REBUFFER_HIGH_WATER_FRAMES=2304
+CONFIG_AUDIOLINK_LINK_RX_CONCEAL_FADE=y
+CONFIG_AUDIOLINK_LINK_RX_RESYNC_KEEP_RUN=y

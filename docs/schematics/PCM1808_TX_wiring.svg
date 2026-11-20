@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 1090" width="1180" height="1090" font-family="Helvetica,Arial,sans-serif" font-size="15">
+<rect width="1180" height="1090" fill="#ffffff"/>
+<defs><marker id="arr" markerUnits="userSpaceOnUse" markerWidth="16" markerHeight="16" refX="14" refY="8" orient="auto"><path d="M0,0 L16,8 L0,16 z" fill="#1f6feb"/></marker></defs>
+<text x="30" y="38" font-size="24" font-weight="bold" fill="#24292f">AUDIOLINK — TX: ESP32-S3 ↔ PCM1808 (o S3 alimenta o módulo)</text>
+<text x="30" y="64" fill="#57606a">Ligações da bancada. Nomes dos pinos do módulo = serigrafia real da placa do Psy.</text>
+<rect x="40" y="110" width="280" height="600" rx="10" fill="#f6f8fa" stroke="#24292f" stroke-width="2"/>
+<text x="180" y="140" text-anchor="middle" font-weight="bold" font-size="17">ESP32-S3 (TX)</text>
+<text x="180" y="160" text-anchor="middle" fill="#57606a">N16R8, alimentado por USB</text>
+<rect x="790" y="110" width="330" height="850" rx="10" fill="#f6f8fa" stroke="#24292f" stroke-width="2"/>
+<text x="955" y="140" text-anchor="middle" font-weight="bold" font-size="17">Módulo PCM1808 (ADC)</text>
+<text x="955" y="160" text-anchor="middle" fill="#57606a">slave, I²S 24 bit, VCC 5 V + VDD 3,3 V</text>
+<circle cx="320" cy="200" r="5" fill="#24292f"/><text x="306" y="205" text-anchor="end" font-weight="bold">GPIO 4</text>
+<text x="306" y="222" text-anchor="end" font-size="12" fill="#57606a">MCLK (saída)</text>
+<circle cx="320" cy="270" r="5" fill="#24292f"/><text x="306" y="275" text-anchor="end" font-weight="bold">GPIO 5</text>
+<text x="306" y="292" text-anchor="end" font-size="12" fill="#57606a">BCLK (saída)</text>
+<circle cx="320" cy="340" r="5" fill="#24292f"/><text x="306" y="345" text-anchor="end" font-weight="bold">GPIO 6</text>
+<text x="306" y="362" text-anchor="end" font-size="12" fill="#57606a">WS / LRCK (saída)</text>
+<circle cx="320" cy="410" r="5" fill="#24292f"/><text x="306" y="415" text-anchor="end" font-weight="bold">GPIO 7</text>
+<text x="306" y="432" text-anchor="end" font-size="12" fill="#57606a">DADOS (entrada)</text>
+<circle cx="320" cy="500" r="5" fill="#24292f"/><text x="306" y="505" text-anchor="end" font-weight="bold">5V</text>
+<text x="306" y="522" text-anchor="end" font-size="12" fill="#57606a">pino 5V da placa</text>
+<circle cx="320" cy="580" r="5" fill="#24292f"/><text x="306" y="585" text-anchor="end" font-weight="bold">3V3</text>
+<text x="306" y="602" text-anchor="end" font-size="12" fill="#57606a">pino 3V3</text>
+<circle cx="320" cy="660" r="5" fill="#24292f"/><text x="306" y="665" text-anchor="end" font-weight="bold">GND</text>
+<circle cx="790" cy="200" r="5" fill="#24292f"/><text x="804" y="205" font-weight="bold">SCK</text>
+<text x="804" y="222" font-size="12" fill="#57606a">= SCKI</text>
+<circle cx="790" cy="270" r="5" fill="#24292f"/><text x="804" y="275" font-weight="bold">BCK</text>
+<circle cx="790" cy="340" r="5" fill="#24292f"/><text x="804" y="345" font-weight="bold">LRC</text>
+<text x="804" y="362" font-size="12" fill="#57606a">= LRCK</text>
+<circle cx="790" cy="410" r="5" fill="#24292f"/><text x="804" y="415" font-weight="bold">OUT</text>
+<text x="804" y="432" font-size="12" fill="#57606a">= DOUT</text>
+<circle cx="790" cy="500" r="5" fill="#24292f"/><text x="804" y="505" font-weight="bold">+5V</text>
+<text x="804" y="522" font-size="12" fill="#57606a">= VCC analógico</text>
+<circle cx="790" cy="580" r="5" fill="#24292f"/><text x="804" y="585" font-weight="bold">3.3V</text>
+<text x="804" y="602" font-size="12" fill="#57606a">= VDD digital (2 pinos)</text>
+<circle cx="790" cy="660" r="5" fill="#24292f"/><text x="804" y="665" font-weight="bold">GND</text>
+<circle cx="790" cy="730" r="5" fill="#24292f"/><text x="804" y="735" font-weight="bold">MD0</text>
+<text x="804" y="752" font-size="12" fill="#57606a">→ GND</text>
+<circle cx="790" cy="775" r="5" fill="#24292f"/><text x="804" y="780" font-weight="bold">MD1</text>
+<text x="804" y="797" font-size="12" fill="#57606a">→ GND</text>
+<circle cx="790" cy="820" r="5" fill="#24292f"/><text x="804" y="825" font-weight="bold">FMT</text>
+<text x="804" y="842" font-size="12" fill="#57606a">→ GND (I²S)</text>
+<circle cx="790" cy="865" r="5" fill="#24292f"/><text x="804" y="870" font-weight="bold">LIN</text>
+<text x="804" y="887" font-size="12" fill="#57606a">→ GND (1.º teste)</text>
+<circle cx="790" cy="910" r="5" fill="#24292f"/><text x="804" y="915" font-weight="bold">RIN</text>
+<text x="804" y="932" font-size="12" fill="#57606a">→ GND (1.º teste)</text>
+<line x1="320" y1="200" x2="480" y2="200" stroke="#1f6feb" stroke-width="3" />
+<rect x="480" y="189" width="64" height="22" fill="#fff" stroke="#1f6feb" stroke-width="2"/><text x="512" y="205" text-anchor="middle" font-size="13">22–47 Ω</text>
+<line x1="544" y1="200" x2="790" y2="200" stroke="#1f6feb" stroke-width="3" />
+<line x1="320" y1="270" x2="480" y2="270" stroke="#1f6feb" stroke-width="3" />
+<rect x="480" y="259" width="64" height="22" fill="#fff" stroke="#1f6feb" stroke-width="2"/><text x="512" y="275" text-anchor="middle" font-size="13">22–47 Ω</text>
+<line x1="544" y1="270" x2="790" y2="270" stroke="#1f6feb" stroke-width="3" />
+<line x1="320" y1="340" x2="790" y2="340" stroke="#1f6feb" stroke-width="3" />
+<line x1="790" y1="410" x2="334" y2="410" stroke="#1f6feb" stroke-width="3" marker-end="url(#arr)"/>
+<line x1="320" y1="500" x2="790" y2="500" stroke="#d1242f" stroke-width="3" />
+<text x="555" y="488" text-anchor="middle" fill="#d1242f" font-weight="bold">+5 V (≈9 mA)</text>
+<text x="555" y="526" text-anchor="middle" font-size="12" fill="#d1242f">exige ponte IN-OUT FECHADA na S3 do TX</text>
+<line x1="320" y1="580" x2="790" y2="580" stroke="#bf8700" stroke-width="3" stroke-dasharray="8 6" />
+<text x="555" y="568" text-anchor="middle" fill="#bf8700" font-weight="bold">3,3 V (≈6 mA) — CONDICIONAL</text>
+<text x="555" y="604" text-anchor="middle" font-size="12" fill="#bf8700">só se o P1 der ≈0 V nos pinos 3.3V do módulo</text>
+<text x="555" y="620" text-anchor="middle" font-size="12" fill="#bf8700">se der ≈3,3 V: NÃO ligar (o módulo já tem regulador)</text>
+<line x1="320" y1="660" x2="790" y2="660" stroke="#24292f" stroke-width="3" />
+<circle cx="720" cy="660" r="5" fill="#24292f"/>
+<line x1="720" y1="660" x2="720" y2="910" stroke="#24292f" stroke-width="3" />
+<line x1="720" y1="730" x2="790" y2="730" stroke="#24292f" stroke-width="3" />
+<circle cx="720" cy="730" r="4" fill="#24292f"/>
+<line x1="720" y1="775" x2="790" y2="775" stroke="#24292f" stroke-width="3" />
+<circle cx="720" cy="775" r="4" fill="#24292f"/>
+<line x1="720" y1="820" x2="790" y2="820" stroke="#24292f" stroke-width="3" />
+<circle cx="720" cy="820" r="4" fill="#24292f"/>
+<line x1="720" y1="865" x2="790" y2="865" stroke="#24292f" stroke-width="3" />
+<circle cx="720" cy="865" r="4" fill="#24292f"/>
+<line x1="720" y1="910" x2="790" y2="910" stroke="#24292f" stroke-width="3" />
+<circle cx="720" cy="910" r="4" fill="#24292f"/>
+<text x="640" y="820" text-anchor="end" fill="#24292f" font-size="13">barramento GND</text>
+<rect x="40" y="740" width="300" height="230" rx="8" fill="#fff8c5" stroke="#bf8700"/>
+<text x="54" y="766" font-size="14" font-weight="bold">ANTES DE ALIMENTAR:</text>
+<text x="54" y="788" font-size="14" >• MD0, MD1 e FMT a GND (o modo</text>
+<text x="54" y="810" font-size="14" >  slave é lido no arranque).</text>
+<text x="54" y="832" font-size="14" >• LIN e RIN em curto a GND no</text>
+<text x="54" y="854" font-size="14" >  1.º teste (mede o piso do ADC).</text>
+<text x="54" y="876" font-size="14" >• Não assumir que 2 Vrms cabem:</text>
+<text x="54" y="898" font-size="14" >  fundo de escala = 3 Vp-p (≈1,06 Vrms).</text>
+<text x="54" y="920" font-size="14" >• Fios curtos (&lt;10 cm); GND comum.</text>
+<text x="54" y="942" font-size="14" >• P1 antes de ligar o 3,3 V.</text>
+<text x="40" y="1000" font-weight="bold">Legenda</text>
+<line x1="40" y1="1019" x2="90" y2="1019" stroke="#1f6feb" stroke-width="3"/><text x="102" y="1024" font-size="14">sinal I²S</text>
+<line x1="40" y1="1041" x2="90" y2="1041" stroke="#d1242f" stroke-width="3"/><text x="102" y="1046" font-size="14">+5 V</text>
+<line x1="40" y1="1063" x2="90" y2="1063" stroke="#bf8700" stroke-width="3" stroke-dasharray="8 6"/><text x="102" y="1068" font-size="14">3,3 V (condicional)</text>
+<line x1="40" y1="1085" x2="90" y2="1085" stroke="#24292f" stroke-width="3"/><text x="102" y="1090" font-size="14">massa (GND)</text>
+<text x="1150" y="1076" text-anchor="end" font-size="12" fill="#57606a">Datasheet TI PCM1808 (SLES177B): VCC 4,5–5,5 V · VDD 2,7–3,6 V · ICC ≈8,6 mA · IDD ≈5,9 mA</text>
+</svg>

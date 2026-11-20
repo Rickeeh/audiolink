@@ -1,0 +1,191 @@
+menu "AUDIOLINK radio bench (Fase 1)"
+
+    choice AUDIOLINK_ROLE
+        prompt "Papel deste nó"
+        default AUDIOLINK_ROLE_TX
+        help
+            Um binario, dois papeis. Cada placa fisica e flashada com um dos dois.
+
+        config AUDIOLINK_ROLE_TX
+            bool "TX (emissor)"
+        config AUDIOLINK_ROLE_RX
+            bool "RX (recetor / medidor)"
+    endchoice
+
+    choice AUDIOLINK_TRANSPORT
+        prompt "Transporte a testar"
+        default AUDIOLINK_TRANSPORT_ESPNOW
+        help
+            Escolhe qual dos dois candidatos da Fase 1 este build usa.
+
+        config AUDIOLINK_TRANSPORT_ESPNOW
+            bool "ESP-NOW v2 (unicast, taxa PHY fixa)"
+        config AUDIOLINK_TRANSPORT_SOFTAP_UDP
+            bool "Wi-Fi SoftAP (RX) + STA (TX) + UDP unicast"
+        config AUDIOLINK_TRANSPORT_DUAL
+            bool "DUAL: ESP-NOW e SoftAP+UDP alternados no MESMO link (comparacao rigorosa)"
+    endchoice
+
+    config AUDIOLINK_WIFI_CHANNEL
+        int "Canal Wi-Fi fixo"
+        range 1 13
+        default 6
+        help
+            Canal fixo para toda a duracao do teste. Nao ha scan nem
+            selecao automatica nesta fase — isso e um requisito de
+            produto (Fase 5), nao do benchmark.
+
+    config AUDIOLINK_PAYLOAD_SIZE
+        int "Tamanho total do pacote (bytes, incluindo cabecalho)"
+        range 32 1470
+        default 200
+        help
+            Para ESP-NOW, valores acima de 250 bytes exercitam o modo
+            v2 (ESP_NOW_MAX_DATA_LEN_V2 = 1470); valores <= 250 tambem
+            sao validos em v1 e uteis como ponto de comparacao.
+            Para SoftAP+UDP o limite pratico e o MTU (~1472 bytes de
+            payload UDP sobre Ethernet-frame de 1500).
+
+    config AUDIOLINK_TX_INTERVAL_US
+        int "Intervalo entre pacotes no TX (us)"
+        range 100 1000000
+        default 1000
+        help
+            Controla o debito alvo: pkt/s = 1000000 / este valor.
+            debito_bps = pkt/s * AUDIOLINK_PAYLOAD_SIZE * 8.
+            Calcula o valor a partir do debito que queres medir; o
+            bench nao faz rate-shaping automatico.
+
+    config AUDIOLINK_TEST_DURATION_S
+        int "Duracao do teste (segundos)"
+        range 5 3600
+        default 30
+
+    config AUDIOLINK_SCAN_ONLY
+        bool "RX: so medir a ocupacao do espectro 2.4 GHz (scan periodico), sem ESP-NOW"
+        default n
+        help
+            O RX faz um scan de todos os canais 1..13 de N em N segundos e imprime uma
+            linha por scan com contagem de APs e RSSI maximo por canal (sem SSIDs, para
+            nao guardar dados de redes de terceiros). Nao ha ESP-NOW nem dump de pacotes.
+            Um scan interrompe a rececao durante ~2-3 s, por isso corre isolado, nunca
+            durante uma medicao.
+
+    config AUDIOLINK_TX_SWEEP
+        bool "TX: percorrer em ciclo uma tabela de pontos de operacao (so ESP-NOW)"
+        default n
+        help
+            O TX ignora PAYLOAD_SIZE/TX_INTERVAL/DURATION/PHY do Kconfig e
+            repete indefinidamente a tabela s_sweep[] de bench_main.c (varias
+            taxas/potencias/debitos), com 6 s entre passos. Pensado para o TX
+            ficar longe e alimentado a bateria: o RX documenta cada passo pelo
+            cabecalho dos pacotes.
+
+    config AUDIOLINK_SWEEP_PROFILE
+        int "Perfil da tabela de sweep (0 = exploracao, 1 = realista HT40, 2 = alcance HT20/11g, 3 = dual ESP-NOW vs UDP)"
+        range 0 3
+        default 0
+        help
+            0: tabela usada nos runs 008/009 (200 B a 0.32 Mbps e 1470 B a 4.7/7.8 Mbps).
+            1: 1.92 Mbps (480 B a cada 2 ms = 48 kHz/20 bit estereo) em MCS0..MCS7 durante
+               30 s por passo, mais uma referencia de 4.7 Mbps. Usado nos testes com paredes.
+            3: so com TRANSPORT_DUAL - alterna ESP-NOW (11g 6M, HT20 MCS0) e UDP (taxa auto) a
+               1.92 Mbps, 30 s por passo, no mesmo link. Largura de banda 20 MHz.
+            2: teste de alcance a 1.92 Mbps: 11g 6/12 Mbps e HT20 MCS0..MCS4. Exige PHYMODE_HT20
+               (largura de banda de 20 MHz, +3 dB de sensibilidade vs HT40) em RX e TX.
+
+    config AUDIOLINK_TX_POWER_QDBM
+        int "Potencia de TX maxima (unidades de 0.25 dBm; 0 = default do driver)"
+        range 0 84
+        default 0
+        help
+            esp_wifi_set_max_tx_power(): 8 = 2 dBm (minimo), 84 = 21 dBm.
+            Aplicado em TX e RX (o ACK do RX tambem conta). Serve para
+            variar o nivel de sinal sem mexer nas placas - ex.: testar se
+            uma falha a curta distancia e saturacao do recetor.
+
+    config AUDIOLINK_RX_RECORD_CAPACITY
+        int "Capacidade do buffer de registos no RX (num. de pacotes)"
+        range 1000 2000000
+        default 300000
+        help
+            Alocado em PSRAM. Cada registo tem 24 bytes fixos.
+            300000 registos ~= 7.2 MB, cabe nos 8 MB octal PSRAM do
+            N16R8 com margem para o resto do sistema. Se o teste gerar
+            mais pacotes do que a capacidade, o RX avisa no log e para
+            de gravar (mas continua a contar perdas/duplicados).
+
+    menu "ESP-NOW"
+        visible if AUDIOLINK_TRANSPORT_ESPNOW || AUDIOLINK_TRANSPORT_DUAL
+
+        config AUDIOLINK_ESPNOW_PEER_MAC
+            string "MAC do peer (formato AA:BB:CC:DD:EE:FF)"
+            default "00:00:00:00:00:00"
+            help
+                So o TX precisa de saber o MAC do RX (unicast).
+                Le o MAC do RX no log de arranque dele e cola aqui.
+
+        choice AUDIOLINK_ESPNOW_PHYMODE
+            prompt "PHY mode"
+            default AUDIOLINK_ESPNOW_PHYMODE_HT40
+
+            config AUDIOLINK_ESPNOW_PHYMODE_11B
+                bool "802.11b (WIFI_PHY_MODE_11B)"
+            config AUDIOLINK_ESPNOW_PHYMODE_11G
+                bool "802.11g (WIFI_PHY_MODE_11G)"
+            config AUDIOLINK_ESPNOW_PHYMODE_HT20
+                bool "802.11n HT20 (WIFI_PHY_MODE_HT20)"
+            config AUDIOLINK_ESPNOW_PHYMODE_HT40
+                bool "802.11n HT40 (WIFI_PHY_MODE_HT40)"
+        endchoice
+
+        choice AUDIOLINK_ESPNOW_RATE
+            prompt "Taxa PHY fixa"
+            default AUDIOLINK_ESPNOW_RATE_MCS7_SGI
+            help
+                So relevante combinada com o PHY mode acima; nem toda
+                combinacao e valida (ex.: MCS* exige HT20/HT40).
+
+            config AUDIOLINK_ESPNOW_RATE_1M_L
+                bool "1 Mbps (11b, long preamble)"
+            config AUDIOLINK_ESPNOW_RATE_11M_S
+                bool "11 Mbps (11b, short preamble)"
+            config AUDIOLINK_ESPNOW_RATE_6M
+                bool "6 Mbps (11g)"
+            config AUDIOLINK_ESPNOW_RATE_24M
+                bool "24 Mbps (11g)"
+            config AUDIOLINK_ESPNOW_RATE_54M
+                bool "54 Mbps (11g)"
+            config AUDIOLINK_ESPNOW_RATE_MCS0_LGI
+                bool "MCS0 long GI (~6.5-13.5 Mbps)"
+            config AUDIOLINK_ESPNOW_RATE_MCS4_LGI
+                bool "MCS4 long GI (~39-81 Mbps)"
+            config AUDIOLINK_ESPNOW_RATE_MCS7_SGI
+                bool "MCS7 short GI (~72-150 Mbps, maximo)"
+        endchoice
+    endmenu
+
+    menu "SoftAP + UDP"
+        visible if AUDIOLINK_TRANSPORT_SOFTAP_UDP || AUDIOLINK_TRANSPORT_DUAL
+
+        config AUDIOLINK_SOFTAP_SSID
+            string "SSID do SoftAP de bancada"
+            default "audiolink-bench"
+
+        config AUDIOLINK_SOFTAP_PASSWORD
+            string "Password do SoftAP de bancada (min 8 chars)"
+            default ""
+            help
+                Define uma palavra-passe propria (8-63 caracteres) antes de usar SoftAP.
+                Esta publicacao nao inclui credenciais de bancada.
+
+        config AUDIOLINK_SOFTAP_UDP_PORT
+            int "Porta UDP"
+            default 5005
+
+        config AUDIOLINK_SOFTAP_GW_IP
+            string "IP do gateway do SoftAP (RX), para o TX apontar"
+            default "192.168.4.1"
+    endmenu
+
+endmenu

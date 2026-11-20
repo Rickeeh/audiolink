@@ -1,0 +1,20 @@
+# N16R8: 16 MB flash, 8 MB PSRAM octal (GPIO 35-37 reservados pelo
+# modulo para o barramento octal - nao usar em nenhum pinout).
+# Modelado nos sdkconfig.*s3* ja validados em esp/cumestack-snapclient,
+# so com o tamanho de flash corrigido para 16 MB (aqueles ficheiros
+# tinham 4 MB, o que nao bate certo com N16R8 - ver nota no README).
+
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_TYPE_AUTO=y
+CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY=y
+
+# Placas com USB nativo (VID 303a): consola pela USB-Serial-JTAG, senao
+# nao aparece nenhum log/CSV na porta usbmodem. (Verificado na 1a placa
+# ligada; se usares uma porta UART-bridge, troca para UART.)
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

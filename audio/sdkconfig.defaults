@@ -1,0 +1,5 @@
+# AUDIOLINK audio bring-up (passos 1 e 2). Overlay S3 em sdkconfig.defaults.esp32s3.
+CONFIG_FREERTOS_HZ=1000
+# Permite ativar em runtime o log de debug do driver I2S (mostra o divisor real do relogio).
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y

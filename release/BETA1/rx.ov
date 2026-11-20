@@ -1,0 +1,6 @@
+# AudioLink Beta 1 - RX. Igual ao overlay do RX E4b (tx_v2/artifacts/E4b_RX/overlay.ov, ELF c1fa3072b) exceto a versao.
+CONFIG_AUDIOLINK_AUDIO_ROLE_LINK_RX=y
+CONFIG_AUDIOLINK_CLK_INT160_13=y
+CONFIG_AUDIOLINK_LINK_PEER_MAC="28:84:85:64:1D:EC"
+CONFIG_APP_PROJECT_VER_FROM_CONFIG=y
+CONFIG_APP_PROJECT_VER="audiolink-beta1-rx"
