@@ -7,3 +7,4 @@
 - Fontes C/H copiados sem alterações; seleção limitada ao AudioLink.
 - Ajustes de publicação: scripts de build portáveis por `IDF_PATH`, documentação de entrada e exclusão de artefactos de bancada. O helper V2P inclui apenas o alvo RX presente nesta publicação.
 - A palavra-passe SoftAP original foi removida do Kconfig e da documentação; o valor por omissão está vazio e tem de ser configurado localmente.
+- O runner de testes ativa as constantes matemáticas da libc em Linux e liga explicitamente libm; os testes e o firmware C/H permanecem idênticos à origem.
